@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vega &amp; Brooks Dental: Email Checker</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#14213d;--mute:#5b667a;--line:#d9dee7;--safe:#1b7f4b;--unsure:#a86400;--bad:#b3261e;--btn:#14213d;--btnink:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#10151f;--card:#1a2130;--ink:#e8ecf4;--mute:#9aa6bb;--line:#2c3547;--safe:#5fd394;--unsure:#f0b455;--bad:#ff8a80;--btn:#e8ecf4;--btnink:#10151f}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#10151f;--card:#1a2130;--ink:#e8ecf4;--mute:#9aa6bb;--line:#2c3547;--safe:#5fd394;--unsure:#f0b455;--bad:#ff8a80;--btn:#e8ecf4;--btnink:#10151f}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Georgia,"Times New Roman",serif}
+main{max-width:720px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.7rem;margin:0 0 4px}
+p.sub{color:var(--mute);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}
+label{font-weight:bold;display:block;margin-bottom:6px}
+textarea{width:100%;box-sizing:border-box;min-height:150px;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:14px/1.45 ui-monospace,Menlo,Consolas,monospace}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+button{font:inherit;cursor:pointer;border-radius:6px;padding:8px 14px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+button.go{background:var(--btn);color:var(--btnink);border-color:var(--btn);font-weight:bold}
+button:focus-visible,textarea:focus-visible{outline:3px solid var(--unsure);outline-offset:2px}
+.verdict{font-size:1.4rem;font-weight:bold;margin:0 0 6px}
+.SAFE{color:var(--safe)}.UNSURE{color:var(--unsure)}.SUSPICIOUS{color:var(--bad)}
+ul{margin:0;padding-left:20px}
+.log{overflow-x:auto}
+table{border-collapse:collapse;width:100%}
+td,th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:.95rem}
+.empty{color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+<h1>Is this email safe to open?</h1>
+<p class="sub">Paste a made-up email. The checker gives a result and the reasons. Nothing is sent or stored.</p>
+
+<div class="card">
+<label for="email">Email text</label>
+<textarea id="email" placeholder="From: someone@example.com&#10;Subject: ...&#10;Message text"></textarea>
+<div class="row">
+<button class="go" id="check">Check email</button>
+<button data-s="0">Load fake invoice</button>
+<button data-s="1">Load storage warning</button>
+<button data-s="2">Load appointment reminder</button>
+<button data-s="3">Load vague attachment</button>
+</div>
+</div>
+
+<div class="card" id="result" aria-live="polite"><span class="empty">Your result will appear here.</span></div>
+
+<div class="card log">
+<strong>Checked emails</strong>
+<p id="summary" class="empty">None yet.</p>
+<table id="log" hidden><thead><tr><th>Email</th><th>Result</th></tr></thead><tbody></tbody></table>
+</div>
+</main>
+<script>
+const TRUSTED=["vegabrooksdental.example","dentalsupplyco.example"];
+const URGENT=["act now","immediately","within 24 hours","urgent","overdue","account locked","final notice","suspended"];
+const PAYMENT=["pay now","payment due","wire transfer","send payment","gift card"];
+const LOGIN=["password","sign in","log in","verify your account"];
+const SAMPLES=[
+`From: billing@dentalsuppIy-co.example
+Subject: Invoice #4471 overdue
+Your invoice is overdue. Pay now to avoid a late fee. Reply immediately.`,
+`From: it-support@vegabrooksdental-help.example
+Subject: Your mailbox is full
+Sign in within 24 hours or you will lose access.
+[https://mail.vegabrooksdental.example/storage](http://storage-fix.example.net/login)`,
+`From: reception@vegabrooksdental.example
+Subject: Appointment reminder
+Hi, this is a reminder that your appointment is tomorrow at 10 AM.`,
+`From: j.miller@docs-share.example
+Subject: Document
+Please review the attached document.`];
+const LABELS=["Fake overdue invoice","Storage warning","Appointment reminder","Vague attachment"];
+
+function similarity(a,b){
+  let prev=Array.from({length:b.length+1},(_,i)=>i);
+  for(let i=1;i<=a.length;i++){
+    const cur=[i];
+    for(let j=1;j<=b.length;j++)
+      cur.push(Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]!==b[j-1]?1:0)));
+    prev=cur;
+  }
+  return 1-prev[b.length]/Math.max(a.length,b.length,1);
+}
+function host(t){const m=t.match(/(?:https?:\/\/)?([\w.-]+\.[a-z]{2,})/i);return m?m[1].toLowerCase():"";}
+function checkEmail(text){
+  const low=text.toLowerCase(),reasons=[];
+  const m=text.match(/^from:.*?[\w.+-]+@([\w.-]+\.[a-z]+)/im);
+  const domain=m?m[1].toLowerCase():"";
+  const known=TRUSTED.includes(domain);
+  const lookalike=!known&&TRUSTED.some(t=>similarity(domain,t)>=0.7);
+  if(lookalike)reasons.push("The sender address looks almost like a real one but is not.");
+  if(URGENT.some(w=>low.includes(w)))reasons.push("It uses urgent wording to rush you.");
+  if(PAYMENT.some(w=>low.includes(w)))reasons.push("It asks for a payment.");
+  if(LOGIN.some(w=>low.includes(w)))reasons.push("It asks you to sign in or give a password.");
+  for(const l of text.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g)){
+    if(host(l[1])&&host(l[1])!==host(l[2])){reasons.push("A link goes somewhere different than it says.");break;}
+  }
+  if(low.includes("attach")&&domain&&!known&&!lookalike)reasons.push("An unknown sender included an attachment.");
+  const n=reasons.length;
+  return {verdict:n===0?"SAFE":n<=2?"UNSURE":"SUSPICIOUS",reasons};
+}
+
+const box=document.getElementById("email"),result=document.getElementById("result");
+const results=[];
+document.querySelectorAll("[data-s]").forEach(b=>b.addEventListener("click",()=>{box.value=SAMPLES[+b.dataset.s];box.dataset.label=LABELS[+b.dataset.s];}));
+box.addEventListener("input",()=>{box.dataset.label="";});
+document.getElementById("check").addEventListener("click",()=>{
+  const text=box.value.trim();
+  if(!text){result.textContent="Paste an email first, or load a sample.";return;}
+  const {verdict,reasons}=checkEmail(text);
+  const label=box.dataset.label||(text.match(/^subject:\s*(.+)$/im)||[0,"Your email"])[1];
+  const names={SAFE:"Looks safe",UNSURE:"Unsure",SUSPICIOUS:"Suspicious"};
+  result.innerHTML=`<p class="verdict ${verdict}">${names[verdict]}</p><ul>${(reasons.length?reasons:["No warning signs found."]).map(r=>`<li>${r}</li>`).join("")}</ul>`;
+  results.push({label,verdict,names});
+  const flagged=results.filter(r=>r.verdict!=="SAFE").length;
+  const s=document.getElementById("summary");
+  s.className="";s.textContent=`${results.length} checked, ${flagged} flagged.`;
+  document.getElementById("log").hidden=false;
+  const tr=document.createElement("tr"),a=document.createElement("td"),b=document.createElement("td");
+  a.textContent=label;b.textContent=names[verdict];b.className=verdict;tr.append(a,b);
+  document.querySelector("#log tbody").appendChild(tr);
+});
+</script>
+</body>
+</html>
