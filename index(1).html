@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Email checker</title>
+<style>
+body{font-family:"Times New Roman",Times,serif;font-size:18px;background:#fff;color:#000;max-width:700px;margin:24px auto;padding:0 16px;line-height:1.4}
+textarea{width:100%;height:180px;font-family:"Courier New",monospace;font-size:14px;box-sizing:border-box}
+button{font-family:inherit;font-size:16px}
+</style>
+</head>
+<body>
+<h1>Email checker</h1>
+<p>paste an email, see if it looks sketchy (made up emails only)</p>
+
+<p>load a sample:
+<button data-s="0">fake invoice</button>
+<button data-s="1">full mailbox</button>
+<button data-s="2">appointment reminder</button>
+<button data-s="3">attached document</button></p>
+
+<textarea id="email"></textarea>
+<p><button id="check">Check</button></p>
+
+<div id="result"></div>
+
+<h2>Checked so far</h2>
+<p id="summary">none yet</p>
+<ul id="log"></ul>
+
+<script>
+const TRUSTED=["vegabrooksdental.example","dentalsupplyco.example"];
+const URGENT=["act now","immediately","within 24 hours","urgent","overdue","account locked","final notice","suspended"];
+const PAYMENT=["pay now","payment due","wire transfer","send payment","gift card"];
+const LOGIN=["password","sign in","log in","verify your account"];
+const SAMPLES=[
+`From: billing@dentalsuppIy-co.example
+Subject: Invoice #4471 overdue
+Your invoice is overdue. Pay now to avoid a late fee. Reply immediately.`,
+`From: it-support@vegabrooksdental-help.example
+Subject: Your mailbox is full
+Sign in within 24 hours or you will lose access.
+[https://mail.vegabrooksdental.example/storage](http://storage-fix.example.net/login)`,
+`From: reception@vegabrooksdental.example
+Subject: Appointment reminder
+Hi, this is a reminder that your appointment is tomorrow at 10 AM.`,
+`From: j.miller@docs-share.example
+Subject: Document
+Please review the attached document.`];
+const LABELS=["fake invoice","full mailbox","appointment reminder","attached document"];
+const NAMES={SAFE:"Looks safe",UNSURE:"Unsure",SUSPICIOUS:"Suspicious"};
+
+function similarity(a,b){
+  let prev=Array.from({length:b.length+1},(_,i)=>i);
+  for(let i=1;i<=a.length;i++){
+    const cur=[i];
+    for(let j=1;j<=b.length;j++)
+      cur.push(Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]!==b[j-1]?1:0)));
+    prev=cur;
+  }
+  return 1-prev[b.length]/Math.max(a.length,b.length,1);
+}
+function host(t){const m=t.match(/(?:https?:\/\/)?([\w.-]+\.[a-z]{2,})/i);return m?m[1].toLowerCase():"";}
+function checkEmail(text){
+  const low=text.toLowerCase(),reasons=[];
+  const m=text.match(/^from:.*?[\w.+-]+@([\w.-]+\.[a-z]+)/im);
+  const domain=m?m[1].toLowerCase():"";
+  const known=TRUSTED.includes(domain);
+  const lookalike=!known&&TRUSTED.some(t=>similarity(domain,t)>=0.7);
+  if(lookalike)reasons.push("sender address looks almost like a real one but isn’t");
+  if(URGENT.some(w=>low.includes(w)))reasons.push("urgent wording to rush you");
+  if(PAYMENT.some(w=>low.includes(w)))reasons.push("asks for a payment");
+  if(LOGIN.some(w=>low.includes(w)))reasons.push("asks you to sign in or give a password");
+  for(const l of text.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g)){
+    if(host(l[1])&&host(l[1])!==host(l[2])){reasons.push("a link goes somewhere different than it says");break;}
+  }
+  if(low.includes("attach")&&domain&&!known&&!lookalike)reasons.push("unknown sender with an attachment");
+  const n=reasons.length;
+  return {verdict:n===0?"SAFE":n<=2?"UNSURE":"SUSPICIOUS",reasons};
+}
+
+const box=document.getElementById("email"),result=document.getElementById("result");
+const results=[];
+document.querySelectorAll("[data-s]").forEach(b=>b.addEventListener("click",()=>{box.value=SAMPLES[+b.dataset.s];box.dataset.label=LABELS[+b.dataset.s];}));
+box.addEventListener("input",()=>{box.dataset.label="";});
+document.getElementById("check").addEventListener("click",()=>{
+  const text=box.value.trim();
+  if(!text){result.textContent="paste an email first";return;}
+  const {verdict,reasons}=checkEmail(text);
+  const label=box.dataset.label||(text.match(/^subject:\s*(.+)$/im)||[0,"your email"])[1];
+  result.innerHTML=`<h2>${NAMES[verdict]}</h2><ul>${(reasons.length?reasons:["no warning signs"]).map(r=>`<li>${r}</li>`).join("")}</ul>`;
+  results.push(verdict);
+  const flagged=results.filter(v=>v!=="SAFE").length;
+  document.getElementById("summary").textContent=`${results.length} checked, ${flagged} flagged`;
+  const li=document.createElement("li");
+  li.textContent=`${label}: ${NAMES[verdict]}`;
+  document.getElementById("log").appendChild(li);
+});
+</script>
+</body>
+</html>
